@@ -1,0 +1,33 @@
+.sentiment-positive { color: #28a745; }
+.sentiment-negative { color: #dc3545; }
+.sentiment-mixed { color: #ffc107; }
+
+.container {
+    max-width: 600px;
+    margin: 2rem auto;
+    padding: 2rem;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+input[type="file"] {
+    margin: 1rem 0;
+}
+
+button {
+    background: #007bff;
+    color: white;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.hidden {
+    display: none;
+}
+
+#downloadLink {
+    display: inline-block;
+    margin-top: 1rem;
+    color: #28a745;
+}

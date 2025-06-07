@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSV处理工具</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1 style="text-align: center;">小红书评论分析</h1>
+        <h3>上传CSV文件</h3>
+        <p style="color:red">注意： 查看<a target="_blank" href="https://juejin.cn/post/7504007819075862555">使用教程</a></p>
+        <input type="file" id="csvFile" accept=".csv">
+        <button onclick="uploadFile()">上传处理</button>
+       
+        <p>上传文件格式 : <a target="_blank" href="{{ url_for('static', filename='demo.csv') }}">下载</a></p>
+        <p>小红书爬虫sitemap: <a target="_blank"  href="{{ url_for('static', filename='sitemap.txt') }}">下载</a></p>
+        <div id="loading" class="hidden">处理中，请稍候...</div>
+        <div id="downloadSection" class="hidden">
+            <a id="downloadLink" download="processed.csv">下载处理后的文件</a>
+        </div>
+        <div id="show_result">
+            <hr>
+            <h2>处理结果</h2>
+            <div id="painPointsListHTML">
+                <h3>词频分析结果</h3>
+                <div id="result"></div>
+                <div id="wordCloud"></div>
+            </div>
+            <hr>
+            <div id="excitementListHTML"> 
+            </div>
+            <hr>
+            <div id="notable_quotesListHTML"> 
+            </div>
+            <hr>
+            <div id="red_flagsListHTML"> 
+            </div>
+            <hr>
+            <p> <button onclick="window.print()">打印</button></p>
+        </div>
+       
+    </div>
+    <!-- 引入 ECharts -->
+    <script src="{{ url_for('static', filename='echarts.min.js') }}"></script>
+    <!-- 新增错误提示区域 -->
+    <div id="errorSection" class="hidden" style="color: red; margin: 10px 0;"></div>
+    
+    <!-- 修改后的JavaScript部分 -->
+    <script>
+    function showError(message) {
+        const errorSection = document.getElementById('errorSection');
+        errorSection.innerHTML = message;
+        errorSection.classList.remove('hidden');
+        setTimeout(() => errorSection.classList.add('hidden'), 5000);
+    }
+    
+    function uploadFile() {
+        const chartIds = [];
+        console.log('开始上传文件处理流程');
+        const file = document.getElementById('csvFile').files[0];
+        if(!file) {
+            alert('请先选择CSV文件');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('file', file);
+    
+        // 显示加载提示
+        console.log('显示加载提示');
+        document.getElementById('loading').classList.remove('hidden');
+    
+        fetch('/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            // 隐藏加载提示
+            document.getElementById('loading').classList.add('hidden');
+            const downloadLink = document.getElementById('downloadLink');
+            if (data.filepath) downloadLink.href = data.filepath; // 确保filepath存在时设置下载链接
+            document.getElementById('downloadSection').classList.remove('hidden');
+            const final_report = data.final_report || {};
+            console.log(final_report);
+            const aggregated_results = final_report.aggregated_results || {};
+            const pain_points = aggregated_results.pain_points || []; // 添加空值检查避免报错
+            const excitement_signals = aggregated_results.excitement_signals || []; // 添加空值检查避免报错
+            const notable_quotes = aggregated_results.notable_quotes || []; // 添加空值检查避免报错
+            const red_flags = aggregated_results.red_flags || []; // 添加空值检查避免报错
+            console.log(pain_points);
+
+            //painPointsListHTML
+            let resultHTML = ''; // 初始化结果HTML变量
+            // 生成痛点列表HTML
+            let painPointsListHTML = '<h3>用户痛点列表</h3><ul class="pain-points-list">';
+            pain_points.forEach(pain => {
+                painPointsListHTML += `<li><strong>痛点描述：</strong>${pain.text} <span class="relevance">（相关性：${pain.relevance}）</span></li>`;
+            });
+            painPointsListHTML += '</ul>';
+            resultHTML += painPointsListHTML;
+            document.getElementById('painPointsListHTML').innerHTML = resultHTML;
+            // 处理痛点词频数据
+            if(data.pain_points_word_frequency) {
+                console.log(data.pain_points_word_frequency);
+                const painPoints =  data.pain_points_word_frequency ;
+                let painPointsHTML = '<h3>痛点词频分析</h3><div class="pain-points">';
+                painPoints.taglist.forEach(tag => {
+                    painPointsHTML += `
+                        <div class="tag-section">
+                            <h4>${tag.tag} (出现次数: ${tag.count}, 情感: <span class="sentiment-${tag.sentiment}">${tag.sentiment}</span>)</h4>
+                            <p>关键词: ${tag.keywords.join('、')}</p>
+                        </div>
+                    `;
+                });
+                painPointsHTML += '</div>';
+                document.getElementById('painPointsListHTML').innerHTML += painPointsHTML;
+            }
+            
+            // 按照pain_points_word_frequency 绘制图表
+            if(data.pain_points_word_frequency) {
+                const painPoints = data.pain_points_word_frequency; // 直接使用已解析的对象，无需重复JSON.parse
+                const painChartId = 'pain_chart';
+                document.getElementById('painPointsListHTML').innerHTML += `<div id="${painChartId}" style="width:100%;height:400px;margin-top:20px;"></div>`;
+                const painChartDom = document.getElementById(painChartId);
+                if(painChartDom) {
+                    const myChart = echarts.init(painChartDom);
+                    const chartData = painPoints.taglist.map(item => ({name: item.tag, value: item.count}));
+                    const option = {
+                        title: { text: '痛点标签出现次数统计' },
+                        tooltip: {},
+                        xAxis: { type: 'category', data: chartData.map(item => item.name) },
+                        yAxis: { type: 'value' },
+                        series: [{ name: '出现次数', type: 'bar', data: chartData.map(item => item.value) }]
+                    };
+                    myChart.setOption(option);
+                }
+            }
+
+
+
+
+            //excitementListHTML
+            let resultHTML_excitementListHTML = ''; // 初始化结果HTML变量
+            // 生成痛点列表HTML
+            let excitementListHTML = '<h3>用户兴奋点列表</h3><ul class="excit-points-list">';
+            excitement_signals.forEach(excit => {
+                excitementListHTML += `<li><strong>用户兴奋点描述：</strong>${excit.text} <span class="relevance">（相关性：${excit.relevance}）</span></li>`;
+            });
+            excitementListHTML += '</ul>';
+            resultHTML_excitementListHTML += excitementListHTML;
+            document.getElementById('excitementListHTML').innerHTML = resultHTML_excitementListHTML;
+            // 处理用户兴奋点词频数据
+            if(data.excitement_signals_word_frequency) {
+                console.log(data.excitement_signals_word_frequency);
+                const excitement =  data.excitement_signals_word_frequency ;
+                let excitementHTML = '<h3>用户兴奋点词频分析</h3><div class="excit-points">';
+                    excitement.taglist.forEach(tag => {
+                        excitementHTML += `
+                        <div class="tag-section">
+                            <h4>${tag.tag} (出现次数: ${tag.count}, 情感: <span class="sentiment-${tag.sentiment}">${tag.sentiment}</span>)</h4>
+                            <p>关键词: ${tag.keywords.join('、')}</p>
+                        </div>
+                    `;
+                });
+                excitementHTML += '</div>';
+                document.getElementById('excitementListHTML').innerHTML += excitementHTML;
+            }
+            
+            // excitement_signals_word_frequency 绘制图表
+            if(data.excitement_signals_word_frequency) {
+                const excitement_word_frequency = data.excitement_signals_word_frequency; // 直接使用已解析的对象，无需重复JSON.parse
+                const excitementChartId = 'excitement_chart';
+                document.getElementById('excitementListHTML').innerHTML += `<div id="${excitementChartId}" style="width:100%;height:400px;margin-top:20px;"></div>`;
+                const excitementChartDom = document.getElementById(excitementChartId);
+                if(excitementChartDom) {
+                    const myChart = echarts.init(excitementChartDom);
+                    const chartData = excitement_word_frequency.taglist.map(item => ({name: item.tag, value: item.count}));
+                    const option = {
+                        title: { text: '用户兴奋点标签出现次数统计' },
+                        tooltip: {},
+                        xAxis: { type: 'category', data: chartData.map(item => item.name) },
+                        yAxis: { type: 'value' },
+                        series: [{ name: '出现次数', type: 'bar', data: chartData.map(item => item.value) }]
+                    };
+                    myChart.setOption(option);
+                }
+            }
+
+
+
+
+
+
+            //notable_quotesListHTML  关键评论引述 
+            let resultHTML_notable_quotes = ''; // 初始化结果HTML变量
+            // 生成痛点列表HTML
+            let notable_quotesListHTML = '<h3>关键评论引述列表</h3><ul class="notable_quotes-list">';
+            notable_quotes.forEach(notable => {
+                notable_quotesListHTML += `<li><strong>关键评论引述：</strong>${notable.text}  </li>`;
+            });
+            notable_quotesListHTML += '</ul>';
+            resultHTML_notable_quotes += notable_quotesListHTML;
+            document.getElementById('notable_quotesListHTML').innerHTML = resultHTML_notable_quotes;
+            // 处理关键评论引述词频数据
+            if(data.notable_quotes_word_frequency) {
+                console.log(data.notable_quotes_word_frequency);
+                const notable_quotes =  data.notable_quotes_word_frequency ;
+                let notable_quotesHTML = '<h3>关键评论引述词频分析</h3><div class="notable_quotes">';
+                    notable_quotes.taglist.forEach(tag => {
+                    notable_quotesHTML += `
+                        <div class="tag-section">
+                            <h4>${tag.tag} (出现次数: ${tag.count}, 情感: <span class="sentiment-${tag.sentiment}">${tag.sentiment}</span>)</h4>
+                            <p>关键词: ${tag.keywords.join('、')}</p>
+                        </div>
+                    `;
+                });
+                notable_quotesHTML += '</div>';
+                document.getElementById('notable_quotesListHTML').innerHTML += notable_quotesHTML;
+            }
+            
+            // 按照notable_quotes_word_frequency 绘制图表
+            if(data.notable_quotes_word_frequency) {
+                const notable_quotes = data.notable_quotes_word_frequency; // 直接使用已解析的对象，无需重复JSON.parse
+                const notable_quotesChartId = 'notable_quotes_chart';
+                document.getElementById('notable_quotesListHTML').innerHTML += `<div id="${notable_quotesChartId}" style="width:100%;height:400px;margin-top:20px;"></div>`;
+                const notable_quotesChartDom = document.getElementById(notable_quotesChartId);
+                if(notable_quotesChartDom) {
+                    const myChart = echarts.init(notable_quotesChartDom);
+                    const chartData = notable_quotes.taglist.map(item => ({name: item.tag, value: item.count}));
+                    const option = {
+                        title: { text: '关键评论引述标签出现次数统计' },
+                        tooltip: {},
+                        xAxis: { type: 'category', data: chartData.map(item => item.name) },
+                        yAxis: { type: 'value' },
+                        series: [{ name: '出现次数', type: 'bar', data: chartData.map(item => item.value) }]
+                    };
+                    myChart.setOption(option);
+                }
+            }
+
+
+
+
+            //red_flagsListHTML
+            let red_flags_resultHTML = ''; // 初始化结果HTML变量
+            // 生成警示信号列表HTML
+            let red_flagsListHTML = '<h3>警示信号列表</h3><ul class="red_flags-list">';
+            red_flags.forEach(red_flags => {
+                red_flagsListHTML += `<li><strong>警示信号描述：</strong>${red_flags} </li>`;
+            });
+            red_flagsListHTML += '</ul>';
+            red_flags_resultHTML += red_flagsListHTML;
+            document.getElementById('red_flagsListHTML').innerHTML = red_flags_resultHTML;
+            // 处理警示信号词频数据
+            if(data.red_flags_word_frequency) {
+                console.log(data.red_flags_word_frequency);
+                const red_flags_list =  data.red_flags_word_frequency ;
+                let red_flagsHTML = '<h3>警示信号词频分析</h3><div class="red_flags">';
+                red_flags_list.taglist.forEach(tag => {
+                    red_flagsHTML += `
+                        <div class="tag-section">
+                            <h4>${tag.tag} (出现次数: ${tag.count}, 情感: <span class="sentiment-${tag.sentiment}">${tag.sentiment}</span>)</h4>
+                            <p>关键词: ${tag.keywords.join('、')}</p>
+                        </div>
+                    `;
+                });
+                red_flagsHTML += '</div>';
+                document.getElementById('red_flagsListHTML').innerHTML += red_flagsHTML;
+            }
+            
+            // 按照red_flags_word_frequency 绘制图表
+            if(data.red_flags_word_frequency) {
+                const red_flags_list = data.red_flags_word_frequency; // 直接使用已解析的对象，无需重复JSON.parse
+                const red_flagsChartId = 'red_flags_chart';
+                document.getElementById('red_flagsListHTML').innerHTML += `<div id="${red_flagsChartId}" style="width:100%;height:400px;margin-top:20px;"></div>`;
+                const red_flagsChartDom = document.getElementById(red_flagsChartId);
+                if(red_flagsChartDom) {
+                    const myChart = echarts.init(red_flagsChartDom);
+                    const chartData = red_flags_list.taglist.map(item => ({name: item.tag, value: item.count}));
+                    const option = {
+                        title: { text: '警示信号出现次数统计' },
+                        tooltip: {},
+                        xAxis: { type: 'category', data: chartData.map(item => item.name) },
+                        yAxis: { type: 'value' },
+                        series: [{ name: '出现次数', type: 'bar', data: chartData.map(item => item.value) }]
+                    };
+                    myChart.setOption(option);
+                }
+            }
+
+
+
+        
+        })
+        .catch(error => {
+            showError(error.message || '处理过程中发生错误，请重试。');
+            document.getElementById('loading').classList.add('hidden');
+        });
+    }
+    </script>
+</body>
+</html>
