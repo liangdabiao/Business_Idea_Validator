@@ -1,0 +1,9 @@
+streamlit==1.31.0
+plotly==5.18.0
+pandas==2.1.4
+matplotlib==3.8.2
+numpy==1.26.3
+requests==2.31.0
+pydantic==2.5.3
+beautifulsoup4==4.13.4
+
